@@ -43,6 +43,7 @@
             max-height: 360px;
             border: 4px solid #222;
             box-sizing: border-box;
+            position: relative;
         }
 
         .square {
@@ -54,6 +55,7 @@
             user-select: none;
             transition: background 0.1s;
             box-sizing: border-box;
+            position: relative;
         }
 
         @media (min-width: 400px) {
@@ -69,6 +71,21 @@
         /* Estados de Seleção e Destaque */
         .square.selected { background-color: #1d4ed8 !important; }
         .square.last-move { background-color: #0d301c !important; }
+
+        /* Marcadores de Movimentos Possíveis */
+        .possible-move::after {
+            content: '';
+            position: absolute;
+            width: 24%;
+            height: 24%;
+            background-color: rgba(34, 197, 94, 0.5); /* Bolinha verde translúcida */
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .possible-capture {
+            box-shadow: inset 0 0 0 4px rgba(239, 68, 68, 0.6) !important; /* Borda vermelha de captura */
+        }
 
         /* Console de Logs Psicológicos (Trash Talk) */
         #console {
@@ -202,7 +219,7 @@
                     if (piece) {
                         const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type.toLowerCase();
                         squareEl.innerText = PIECES_UNICODE[pieceKey] || '';
-                        squareEl.style.color = piece.color === 'w' ? '#fff' : '#ff5555'; // Vermelho pro oponente
+                        squareEl.style.color = piece.color === 'w' ? '#fff' : '#ff5555'; 
                     }
 
                     squareEl.onclick = () => handleSquareClick(squareCoord);
@@ -211,12 +228,41 @@
             }
         }
 
+        /* --- DESTAQUE DE MOVIMENTOS POSSÍVEIS --- */
+        function destacarMovimentosPossiveis(coord) {
+            // Remove destaques antigos antes de aplicar os novos
+            limparDestaquesDeMovimento();
+
+            // Obtém todas as jogadas válidas a partir do quadrado clicado
+            const moves = game.moves({ square: coord, verbose: true });
+
+            moves.forEach(move => {
+                const targetSquare = document.querySelector(`[data-coord="${move.to}"]`);
+                if (targetSquare) {
+                    if (move.captured) {
+                        // Se houver peça inimiga para capturar, aplica borda vermelha
+                        targetSquare.classList.add('possible-capture');
+                    } else {
+                        // Se o quadrado estiver livre, coloca a bolinha central verde
+                        targetSquare.classList.add('possible-move');
+                    }
+                }
+            });
+        }
+
+        function limparDestaquesDeMovimento() {
+            document.querySelectorAll('.square').forEach(sq => {
+                sq.classList.remove('possible-move', 'possible-capture');
+            });
+        }
+
         /* --- CONTROLE DE CLIQUE E JOGADAS --- */
         function handleSquareClick(coord) {
             if (game.turn() !== 'w' || game.game_over() || !enginePronta) return;
 
             if (selectedSquare === coord) {
                 selectedSquare = null;
+                limparDestaquesDeMovimento();
                 drawBoard();
                 return;
             }
@@ -225,11 +271,12 @@
                 const move = game.move({
                     from: selectedSquare,
                     to: coord,
-                    promotion: 'q' // Promoção automática para Rainha
+                    promotion: 'q' 
                 });
 
                 if (move) {
                     selectedSquare = null;
+                    limparDestaquesDeMovimento();
                     drawBoard();
                     highlightLastMove(move.from, move.to);
                     updateStatus();
@@ -239,19 +286,22 @@
                         setTimeout(dispararEnginePretas, 300);
                     }
                 } else {
-                    // Seleção alternativa se clicar em outra peça sua
+                    // Mudança de peça selecionada (Troca de foco)
                     const piece = game.get(coord);
                     if (piece && piece.color === 'w') {
                         selectedSquare = coord;
                         drawBoard();
                         document.querySelector(`[data-coord="${coord}"]`).classList.add('selected');
+                        destacarMovimentosPossiveis(coord);
                     }
                 }
             } else {
+                // Seleção primária da peça branca
                 const piece = game.get(coord);
                 if (piece && piece.color === 'w') {
                     selectedSquare = coord;
                     document.querySelector(`[data-coord="${coord}"]`).classList.add('selected');
+                    destacarMovimentosPossiveis(coord);
                 }
             }
         }
@@ -260,10 +310,11 @@
         function dispararEnginePretas() {
             if (!enginePronta) return;
             stockfish.postMessage('position fen ' + game.fen());
-            stockfish.postMessage('go movetime 800'); // Tempo de resposta fixo em 800ms
+            // CORREÇÃO: Uso de depth estável em vez de tempo dinâmico para evitar travar o processador web
+            stockfish.postMessage('go depth 10'); 
         }
 
-        function ejecutarLanceKasparov(moveStr) {
+        function executarLanceKasparov(moveStr) {
             const from = moveStr.substring(0, 2);
             const to = moveStr.substring(2, 4);
 
@@ -312,6 +363,7 @@
         function reiniciarJogo() {
             game = new Chess();
             selectedSquare = null;
+            limparDestaquesDeMovimento();
             drawBoard();
             updateStatus();
             printLog("Partida reiniciada. Tabuleiro limpo.");
