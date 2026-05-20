@@ -16,6 +16,7 @@
             min-height: 100vh;
             margin: 0;
             padding: 10px;
+            box-sizing: border-box;
         }
 
         h2 {
@@ -31,7 +32,7 @@
             height: 18px;
         }
 
-        /* Grid do Tabuleiro de Xadrez */
+        /* Grid do Tabuleiro de Xadrez Responsivo */
         #board {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
@@ -41,16 +42,24 @@
             height: 90vw;
             max-height: 360px;
             border: 4px solid #222;
+            box-sizing: border-box;
         }
 
         .square {
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
+            font-size: 7vw; /* Escala dinamicamente em telas mobile */
             cursor: pointer;
             user-select: none;
             transition: background 0.1s;
+            box-sizing: border-box;
+        }
+
+        @media (min-width: 400px) {
+            .square {
+                font-size: 32px; /* Limita o tamanho máximo no PC */
+            }
         }
 
         /* Cores do Tabuleiro (Estética Dark/Terminal) */
@@ -65,7 +74,7 @@
         #console {
             width: 90vw;
             max-width: 360px;
-            height: 80px;
+            height: 90px;
             background: #000;
             border: 1px solid #222;
             margin-top: 15px;
@@ -85,6 +94,7 @@
             padding: 8px 16px;
             cursor: pointer;
             font-family: monospace;
+            transition: 0.2s;
         }
         .btn-reset:hover { background: #222; border-color: #3b82f6; }
     </style>
@@ -92,11 +102,11 @@
 <body>
 
     <h2>GARRY_KASPAROV_AI</h2>
-    <div class="status" id="game-status">Inicializando barramento lógico...</div>
+    <div class="status" id="game-status">Injetando Kernel do Motor...</div>
 
     <div id="board"></div>
 
-    <div id="console">> [System]: Aguardando inicialização do Kernel Stockfish...</div>
+    <div id="console">> [System]: Contornando bloqueio de segurança CORS via Blob...</div>
 
     <button class="btn-reset" onclick="reiniciarJogo()">[ RESETAR PARTIDA ]</button>
 
@@ -112,26 +122,37 @@
         let stockfish = null;
         let enginePronta = false;
 
-        // Dicionário de Peças Unicode para renderizar sem arquivos de imagem
+        // Dicionário de Peças Unicode
         const PIECES_UNICODE = {
-            'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', // Pretas
-            'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'  // Brancas
+            'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', // Pretas (Kasparov)
+            'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'  // Brancas (Você)
         };
 
-        // Frases agressivas do Kasparov baseadas no andamento do jogo
+        // Frases de pressão tática do Kasparov
         const KASPAROV_QUOTES = [
             "O xadrez é uma agonia mental. Você está pronto para sofrer?",
-            "Seu plano é fraco. Eu consigo ver sua derrota a 10 lances de distância.",
+            "Seu plano é fraco. Consigo ver sua derrota a 10 lances de distância.",
             "Você joga com medo. O tabuleiro pune a hesitação.",
             "A imprecisão é o primeiro passo para o colapso estrutural.",
             "Ataque é a única forma de xadrez que eu respeito."
         ];
 
-        /* --- INICIALIZAÇÃO DO MOTOR VIA WEB WORKER (WASM) --- */
-        function initEngine() {
+        /* --- INICIALIZAÇÃO DO MOTOR COM CONTORNO DE CORS --- */
+        async function initEngine() {
             try {
-                // Carrega o motor puramente web/WASM direto da CDN pública
-                stockfish = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
+                const cdnUrl = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
+                
+                // Baixa o script da CDN como texto puro
+                const response = await fetch(cdnUrl);
+                if (!response.ok) throw new Error("Erro ao baixar script da CDN");
+                const workerCode = await response.text();
+                
+                // Transforma o texto em um Blob executável de origem local
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const blobURL = URL.createObjectURL(blob);
+                
+                // Instancia o Worker sem violar as regras de CORS do navegador
+                stockfish = new Worker(blobURL);
                 
                 stockfish.postMessage('uci');
                 stockfish.postMessage('isready');
@@ -141,14 +162,14 @@
                     
                     if (msg === 'readyok') {
                         enginePronta = true;
-                        // Força estilo de jogo agressivo e voltado para ganhar (Contempt alto)
+                        // Força estilo agressivo do Kasparov (Contempt alto)
                         stockfish.postMessage('setoption name Contempt value 120');
-                        stockfish.postMessage('setoption name Skill Level value 20'); // Força máxima
-                        printLog("Garry Kasparov carregado no barramento. Faça seu lance (Brancas).");
+                        stockfish.postMessage('setoption name Skill Level value 20'); 
+                        printLog("Garry Kasparov carregado com sucesso. Faça seu lance (Brancas).");
                         updateStatus();
                     }
 
-                    // Captura o melhor movimento calculado pela IA
+                    // Trata o lance calculado pela IA
                     if (msg.startsWith('bestmove')) {
                         const move = msg.split(' ')[1];
                         if (move && move !== '(none)') {
@@ -157,7 +178,9 @@
                     }
                 };
             } catch(e) {
-                printLog("Falha crítica ao subir Web Worker offline.");
+                console.error(e);
+                printLog("Falha crítica de segurança ou rede ao injetar o Kernel.");
+                statusEl.innerText = "Erro de Barramento.";
             }
         }
 
@@ -166,36 +189,31 @@
             boardEl.innerHTML = '';
             const boardState = game.board();
 
-            // O chess.js lê a matriz de cima para baixo (linha 8 à linha 1)
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
                     const squareEl = document.createElement('div');
                     const isLight = (r + c) % 2 === 0;
-                    const squareCoord = String.fromCharCode(97 + c) + (8 - r); // Converte para a1, b2...
+                    const squareCoord = String.fromCharCode(97 + c) + (8 - r);
 
                     squareEl.classList.add('square', isLight ? 'light' : 'dark');
                     squareEl.dataset.coord = squareCoord;
 
                     const piece = boardState[r][c];
                     if (piece) {
-                        // Se for uma peça das pretas (letra minúscula no tipo), usa o caractere correto
                         const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type.toLowerCase();
                         squareEl.innerText = PIECES_UNICODE[pieceKey] || '';
-                        squareEl.style.color = piece.color === 'w' ? '#fff' : '#ff5555'; // Inimigo em vermelho
+                        squareEl.style.color = piece.color === 'w' ? '#fff' : '#ff5555'; // Vermelho pro oponente
                     }
 
-                    // Evento de clique para jogar
                     squareEl.onclick = () => handleSquareClick(squareCoord);
                     boardEl.appendChild(squareEl);
                 }
             }
         }
 
-        /* --- CONTROLE DE JOGADAS DO USUÁRIO --- */
+        /* --- CONTROLE DE CLIQUE E JOGADAS --- */
         function handleSquareClick(coord) {
             if (game.turn() !== 'w' || game.game_over() || !enginePronta) return;
-
-            const squareEls = document.querySelectorAll('.square');
 
             if (selectedSquare === coord) {
                 selectedSquare = null;
@@ -203,12 +221,11 @@
                 return;
             }
 
-            // Se já tem uma peça selecionada, tenta mover
             if (selectedSquare) {
                 const move = game.move({
                     from: selectedSquare,
                     to: coord,
-                    promotion: 'q' // Auto-promove para Rainha para não complicar a UI
+                    promotion: 'q' // Promoção automática para Rainha
                 });
 
                 if (move) {
@@ -217,19 +234,20 @@
                     highlightLastMove(move.from, move.to);
                     updateStatus();
 
-                    // Passa o turno para o Kasparov pensar
                     if (!game.game_over()) {
                         statusEl.innerText = "Kasparov está calculando a sua ruína...";
                         setTimeout(dispararEnginePretas, 300);
                     }
                 } else {
-                    // Se o movimento for inválido, tenta selecionar a nova peça clicada
-                    selectedSquare = coord;
-                    drawBoard();
-                    document.querySelector(`[data-coord="${coord}"]`).classList.add('selected');
+                    // Seleção alternativa se clicar em outra peça sua
+                    const piece = game.get(coord);
+                    if (piece && piece.color === 'w') {
+                        selectedSquare = coord;
+                        drawBoard();
+                        document.querySelector(`[data-coord="${coord}"]`).classList.add('selected');
+                    }
                 }
             } else {
-                // Seleciona a peça se ela for branca
                 const piece = game.get(coord);
                 if (piece && piece.color === 'w') {
                     selectedSquare = coord;
@@ -238,16 +256,14 @@
             }
         }
 
-        /* --- DISPARO DO WEB WORKER DO KASPAROV --- */
+        /* --- FLUXO DO BOT --- */
         function dispararEnginePretas() {
             if (!enginePronta) return;
-            // Informa a posição atual no formato padrão FEN
             stockfish.postMessage('position fen ' + game.fen());
-            // Garry calcula por 800ms (Rápido, forte e excelente para mobile)
-            stockfish.postMessage('go movetime 800');
+            stockfish.postMessage('go movetime 800'); // Tempo de resposta fixo em 800ms
         }
 
-        function executarLanceKasparov(moveStr) {
+        function ejecutarLanceKasparov(moveStr) {
             const from = moveStr.substring(0, 2);
             const to = moveStr.substring(2, 4);
 
@@ -257,7 +273,6 @@
                 highlightLastMove(from, to);
                 updateStatus();
                 
-                // Sorteia uma fala pesada do Kasparov no console
                 if (Math.random() > 0.4) {
                     const frase = KASPAROV_QUOTES[Math.floor(Math.random() * KASPAROV_QUOTES.length)];
                     printLog(`Kasparov: "${frase}"`);
@@ -265,7 +280,7 @@
             }
         }
 
-        /* --- AUXILIARES VISUAIS E DE LOG --- */
+        /* --- FEEDBACKS VISUAIS --- */
         function highlightLastMove(from, to) {
             document.querySelector(`[data-coord="${from}"]`)?.classList.add('last-move');
             document.querySelector(`[data-coord="${to}"]`)?.classList.add('last-move');
@@ -277,19 +292,16 @@
         }
 
         function updateStatus() {
-            if (!enginePronta) {
-                statusEl.innerText = "Sincronizando Core...";
-                return;
-            }
+            if (!enginePronta) return;
 
             let statusText = "Sua vez (Brancas).";
             
             if (game.in_checkmate()) {
                 statusText = "XEQUE-MATE! Fim de jogo.";
-                printLog(game.turn() === 'w' ? "System: Garry Kasparov venceu por destruição posicional." : "System: Você venceu Kasparov! Um feito histórico.");
+                printLog(game.turn() === 'w' ? "System: Garry Kasparov venceu por destruição tática." : "System: Você venceu Kasparov! Um feito inacreditável.");
             } else if (game.in_draw() || game.in_stalemate()) {
-                statusText = "Empate técnico detectado.";
-                printLog("System: A partida terminou empatada por falta de material ou afogamento.");
+                statusText = "Partida empatada.";
+                printLog("System: Empate por falta de material ou afogamento.");
             } else if (game.in_check()) {
                 statusText = "Atenção: Seu Rei está em Xeque!";
             }
@@ -305,7 +317,7 @@
             printLog("Partida reiniciada. Tabuleiro limpo.");
         }
 
-        // Boot Inicial
+        // Execução Inicial
         drawBoard();
         initEngine();
     </script>
