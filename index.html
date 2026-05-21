@@ -155,6 +155,10 @@
                 <option value="magnus">Magnus Carlsen (Frio & Preciso)</option>
                 <option value="hikaru">Hikaru Nakamura (Agressivo & Veloz)</option>
                 <option value="kasparov">Garry Kasparov (Destruição Tática)</option>
+                <option value="fischer">Bobby Fischer (Gênio Implacável)</option>
+                <option value="karpov">Anatoly Karpov (Boa Constritora)</option>
+                <option value="tal">Mikhail Tal (O Mago dos Sacrifícios)</option>
+                <option value="leitao">Rafael Leitão (Sólido & Técnico)</option>
             </optgroup>
         </select>
     </div>
@@ -178,7 +182,7 @@
         let stockfish = null;
         let enginePronta = false;
 
-        // Banco de dados de oponentes e configurações físicas no Stockfish
+        // Banco de dados corrigido e unificado com todas as lendas
         const OPONENTES = {
             'bot100':   { skill: 0,  depth: 1, contempt: 0,   nome: "Aparício", frases: ["Opa, joguei sem querer.", "Isso é uma dama ou um cavalo?", "Xadrez é legal."] },
             'bot500':   { skill: 3,  depth: 2, contempt: 10,  nome: "Iniciante", frases: ["Estou tentando não pendurar minha rainha.", "Acho que esse lance foi bom.", "Sua vez."] },
@@ -188,7 +192,11 @@
             'bot3000':  { skill: 20, depth: 12, contempt: 120, nome: "Super Computador", frases: ["Cálculo absoluto em andamento.", "Derrota humana inevitável.", "01001100 01001111 01010011 01000101"] },
             'magnus':   { skill: 18, depth: 8, contempt: 50,  nome: "Magnus Carlsen", frases: ["Eu posso jogar esse final por horas até você errar.", "Literalmente não me importo com o seu ataque.", "Você está jogando xadrez de forma muito lenta.", "Só estou relaxando enquanto venço."] },
             'hikaru':   { skill: 19, depth: 7, contempt: 100, nome: "Hikaru Nakamura", frases: ["Tudo bem, você joga isso, eu jogo aquilo, eu tomo, você toma e eu ganho.", "Isso é mate em 5, literalmente mate em 5 lances.", "Gasp! Espera, você realmente jogou isso?!", "Vamos acelerar esse jogo."] },
-            'kasparov': { skill: 20, depth: 10, contempt: 120, nome: "Garry Kasparov", frases: ["O xadrez é uma agonia mental. Você está pronto para sofrer?", "Seu plano é fraco. Consigo ver sua derrota a 10 lances de distância.", "Você joga com medo. O tabuleiro pune a hesitação.", "A imprecisão é o primeiro passo para o colapso estrutural."] }
+            'kasparov': { skill: 20, depth: 10, contempt: 120, nome: "Garry Kasparov", frases: ["O xadrez é uma agonia mental. Você está pronto para sofrer?", "Seu plano é fraco. Consigo ver sua derrota a 10 lances de distância.", "Você joga com medo. O tabuleiro pune a hesitação.", "A imprecisão é o primeiro passo para o colapso estrutural."] },
+            'fischer':  { skill: 20, depth: 9, contempt: 110, nome: "Bobby Fischer", frases: ["Eu não acredito em psicologia, eu acredito em bons lances.", "Você já pode abandonar, seu posicionamento é patético.", "Xadrez é guerra nas 64 casas.", "Gosto do momento em que quebro o ego do meu oponente."] },
+            'karpov':   { skill: 19, depth: 10, contempt: -20, nome: "Anatoly Karpov", frases: ["Seu ataque não faz sentido. Vou apenas sufocar suas peças.", "Você está correndo em círculos enquanto eu domino o centro.", "O xadrez expressa pura lógica pura.", "Cada fraqueza que você cria se torna meu alvo permanente."] },
+            'tal':      { skill: 18, depth: 7, contempt: 150, nome: "Mikhail Tal", frases: ["Você precisa levar suas peças para um passeio na floresta escura.", "Ah, você achou que aquele cavalo estava seguro? Sacrifício!", "Há dois tipos de sacrifícios: os corretos e os meus.", "Gosto de criar o caos absoluto no tabuleiro."] },
+            'leitao':   { skill: 17, depth: 8, contempt: 40,  nome: "GM Rafael Leitão", frases: ["Calculando com precisão cirúrgica.", "Essa linha teórica é muito perigosa para as brancas.", "Defesa sólida. Não há táticos disponíveis para você aqui.", "Xadrez de alto nível exige respeito à estrutura."] }
         };
 
         const PIECES_UNICODE = {
@@ -365,7 +373,6 @@
                 highlightLastMove(from, to);
                 updateStatus();
                 
-                // Dispara o Trash Talk customizável da lenda escolhida
                 if (Math.random() > 0.3) {
                     const config = OPONENTES[botSelector.value];
                     const frase = config.frases[Math.floor(Math.random() * config.frases.length)];
