@@ -417,6 +417,7 @@ Digite 'help' para listar utilitários de sistema.
                     error: (...params) => { logsCapturados.push(`<span class="error">${params.join(' ')}</span>`); }
                 };
 
+                // Sistema Dinâmico Pro de Resolução de Módulos (CJS Avançado)
                 function escopoRequire(nomeModulo) {
                     if (nomeModulo === 'fs') {
                         return {
@@ -430,36 +431,50 @@ Digite 'help' para listar utilitários de sistema.
                     }
 
                     let moduloContent = globalNodeModules[nomeModulo].content;
-                    let arquivoAlvo = "index.js";
+                    let rotasPossiveis = [];
 
+                    // 1. Verifica se o package.json indica onde está o arquivo principal
                     if (moduloContent["package.json"]) {
                         try {
                             let pkgJson = JSON.parse(moduloContent["package.json"].content);
-                            if (pkgJson.main) arquivoAlvo = pkgJson.main.replace(/^\.\//, "");
+                            if (pkgJson.main) {
+                                // Limpa caminhos como "./src/index.js" para "src/index.js"
+                                let rotaMain = pkgJson.main.replace(/^(\.\/|\/)/, "");
+                                rotasPossiveis.push(rotaMain);
+                            }
                         } catch (e) {}
                     }
 
-                    let partesCaminho = arquivoAlvo.split('/');
-                    let ponteiro = moduloContent;
+                    // 2. Fallbacks de segurança (Pontos de entrada padrões do ecossistema NPM)
+                    rotasPossiveis.push("index.js", "src/index.js", "dist/index.js", "lib/index.js");
+
                     let arquivoEncontrado = null;
 
-                    for (let i = 0; i < partesCaminho.length; i++) {
-                        let parte = partesCaminho[i];
-                        if (ponteiro[parte]) {
-                            if (ponteiro[parte].type === 'file' && i === partesCaminho.length - 1) {
-                                arquivoEncontrado = pointer[parte].content;
-                            } else if (ponteiro[parte].type === 'dir') {
-                                ponteiro = ponteiro[parte].content;
+                    // Percorre as rotas até achar um arquivo válido no VFS modular
+                    for (let rota of rotasPossiveis) {
+                        let partesCaminho = rota.split('/').filter(p => p !== '');
+                        let ponteiro = moduloContent;
+                        let valido = true;
+
+                        for (let i = 0; i < partesCaminho.length; i++) {
+                            let parte = partesCaminho[i];
+                            if (ponteiro && ponteiro[parte]) {
+                                if (i === partesCaminho.length - 1 && ponteiro[parte].type === 'file') {
+                                    arquivoEncontrado = ponteiro[parte].content;
+                                } else if (ponteiro[parte].type === 'dir') {
+                                    ponteiro = ponteiro[parte].content;
+                                } else {
+                                    valido = false;
+                                }
+                            } else {
+                                valido = false;
                             }
                         }
-                    }
-
-                    if (!arquivoEncontrado && moduloContent["index.js"]) {
-                        arquivoEncontrado = moduloContent["index.js"].content;
+                        if (arquivoEncontrado) break;
                     }
 
                     if (!arquivoEncontrado) {
-                        throw new Error(`Cannot find entry point for module '${nomeModulo}'`);
+                        throw new Error(`Cannot find entry point for module '${nomeModulo}'. Tentou rotas: ${rotasPossiveis.join(', ')}`);
                     }
 
                     try {
@@ -467,6 +482,7 @@ Digite 'help' para listar utilitários de sistema.
                         let runtimeModulo = { exports: moduleExports };
                         let executorModulo = new Function('require', 'console', 'module', 'exports', arquivoEncontrado);
                         
+                        // Permite recursividade (módulos chamando outros submódulos com a mesma engine)
                         executorModulo(escopoRequire, simularConsole, runtimeModulo, runtimeModulo.exports);
                         return runtimeModulo.exports;
                     } catch (err) {
@@ -485,6 +501,7 @@ Digite 'help' para listar utilitários de sistema.
                     return `<span class="error">RuntimeError: ${err.message}</span>`;
                 }
             },
+
 
                         'npm': async (args) => {
                 if (args[0] !== 'install' || !args[1]) return `<span class="error">Uso: npm install &lt;nome-do-pacote&gt;</span>`;
