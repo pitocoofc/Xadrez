@@ -486,50 +486,81 @@ Digite 'help' para listar utilitários de sistema.
                 }
             },
 
-            'npm': async (args) => {
+                        'npm': async (args) => {
                 if (args[0] !== 'install' || !args[1]) return `<span class="error">Uso: npm install &lt;nome-do-pacote&gt;</span>`;
                 let pacote = args[1].trim().toLowerCase();
 
                 printLiveOutput(`npm http fetch GET https://registry.npmjs.org/${pacote}`);
 
                 try {
-                    // 1. Puxa os metadados direto do registro oficial do NPM (CORS Aberto!)
+                    // 1. Busca a versão estável mais recente do pacote no NPM
                     let npmRes = await fetch(`https://registry.npmjs.org/${pacote}/latest`);
                     if (!npmRes.ok) throw new Error("Pacote não encontrado no registro do NPM.");
-                    
                     let pkgData = await npmRes.json();
                     let versao = pkgData.version;
-                    let arquivoMain = pkgData.main || "index.js";
-                    arquivoMain = arquivoMain.replace(/^\.\//, ""); // Limpa o './' se houver
+
+                    printLiveOutput(`Buscando árvore completa de arquivos de ${pacote}@${versao} via jsDelivr...`);
+
+                    // 2. Busca a árvore de arquivos completa direto da API do jsDelivr (CORS Liberado)
+                    let treeRes = await fetch(`https://data.jsdelivr.com/v1/packages/npm/${pacote}@${versao}?structure=flat`);
+                    if (!treeRes.ok) throw new Error("Não foi possível mapear a estrutura do pacote.");
+                    let treeData = await treeRes.json(); // Retorna uma array de objetos { name: "/src/index.js" }
 
                     let dir = getDiretorioAtual();
                     if (!dir["node_modules"]) dir["node_modules"] = { "type": "dir", "content": {} };
                     let nodeModules = dir["node_modules"].content;
 
-                    // Cria a estrutura do pacote no seu VFS
+                    // Inicializa a pasta raiz do pacote
                     nodeModules[pacote] = { "type": "dir", "content": {} };
-                    let pastaPacote = nodeModules[pacote].content;
+                    let pastaRaizPacote = nodeModules[pacote].content;
 
-                    printLiveOutput(`npm http fetch GET https://cdn.jsdelivr.net/npm/${pacote}@${versao}/${arquivoMain}`);
+                    printLiveOutput(`Baixando estrutura modular de arquivos (Isolando códigos)...`);
 
-                    // 2. Puxa o arquivo principal e o package.json usando a CDN oficial do jsDelivr (CORS Aberto!)
-                    let mainRes = await fetch(`https://cdn.jsdelivr.net/npm/${pacote}@${versao}/${arquivoMain}`);
-                    if (!mainRes.ok) throw new Error(`Não foi possível obter o arquivo de entrada (${arquivoMain}).`);
-                    let codigoMain = await mainRes.text();
+                    // 3. Loop para processar e baixar cada arquivo respeitando as subpastas
+                    for (let item of treeData.files) {
+                        let caminhoCompleto = item.name; // Ex: "/src/client/Client.js" ou "/package.json"
+                        
+                        // Ignora arquivos pesados de mídia ou docs para não estourar o LocalStorage à toa
+                        if (/\.(png|jpg|jpeg|gif|md|svg|ico|pdf)$/i.test(caminhoCompleto)) {
+                            continue;
+                        }
 
-                    // Salva os arquivos essenciais para o seu comando 'node' conseguir rodar o require
-                    pastaPacote[arquivoMain] = { "type": "file", "content": codigoMain };
-                    pastaPacote["package.json"] = { 
-                        "type": "file", 
-                        "content": JSON.stringify({ name: pacote, version: versao, main: arquivoMain }) 
-                    };
+                        // Quebra o caminho em partes para reconstruir os subdiretórios no VFS
+                        let partes = caminhoCompleto.split('/').filter(p => p !== '');
+                        let ponteiroPasta = pastaRaizPacote;
+
+                        // Cria as subpastas necessárias no caminho do arquivo
+                        for (let i = 0; i < partes.length - 1; i++) {
+                            let pastaNome = partes[i];
+                            if (!ponteiroPasta[pastaNome]) {
+                                ponteiroPasta[pastaNome] = { "type": "dir", "content": {} };
+                            }
+                            ponteiroPasta = ponteiroPasta[pastaNome].content;
+                        }
+
+                        // Nome do arquivo final
+                        let nomeArquivo = partes[partes.length - 1];
+
+                        // Faz o fetch do conteúdo real do arquivo na CDN
+                        try {
+                            let fileUrl = `https://cdn.jsdelivr.net/npm/${pacote}@${versao}${caminhoCompleto}`;
+                            let fileRes = await fetch(fileUrl);
+                            if (fileRes.ok) {
+                                let conteudo = await fileRes.text();
+                                ponteiroPasta[nomeArquivo] = { "type": "file", "content": conteudo };
+                            }
+                        } catch (e) {
+                            printLiveOutput(`<span class="error">Aviso: Falha ao baixar ${caminhoCompleto}</span>`);
+                        }
+                    }
 
                     salvarFS();
-                    return `<span class="success">+ ${pacote}@${versao}\nadded 1 package in GhostOS VFS successfully.</span>`;
+                    return `<span class="success">+ ${pacote}@${versao}\nAdicionado com sucesso no GhostOS VFS com toda a estrutura interna preservada.</span>`;
                 } catch (err) {
                     return `<span class="error">npm ERR! code E404\nnpm ERR! 404 Not Found: ${pacote} - ${err.message}</span>`;
                 }
             },
+
 
 
 
