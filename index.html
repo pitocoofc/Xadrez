@@ -190,6 +190,21 @@ Digite 'help' para listar utilitários de sistema.
                 }
             }
         };
+        window.process = {
+            env: { NODE_ENV: 'development', DEBUG: '*' },
+            argv: ['node'],
+            version: 'v18.16.0',
+            versions: { node: '18.16.0', v8: '10.2.154.26', uv: '1.43.0' },
+            platform: 'linux',
+            arch: 'arm64',
+            cwd: () => "/" + currentPath.slice(1).join('/'),
+            nextTick: (fn, ...args) => setTimeout(() => fn(...args), 0),
+            binding: (name) => { throw new Error("Binding nativo não suportado no navegador: " + name); },
+            stdout: { write: (msg) => { console.log(msg); } },
+            stderr: { write: (msg) => { console.error(msg); } },
+            browser: true
+        };
+
 
         let FS = JSON.parse(localStorage.getItem('ghost_fs')) || DEFAULT_FS;
         let currentPath = ["root", "home", "ghost"]; 
