@@ -403,7 +403,7 @@ Digite 'help' para listar utilitários de sistema.
                 return "OPEN_NANO_SIGNAL";
             },
 
-            'node': (args) => {
+                        'node': (args) => {
                 if (!args[0]) return `<span class="error">Uso: node &lt;arquivo.js&gt;</span>`;
                 let dir = getDiretorioAtual();
                 if (!dir[args[0]]) return `<span class="error">node: internal/modules/cjs/loader: Cannot find module './${args[0]}'</span>`;
@@ -417,90 +417,118 @@ Digite 'help' para listar utilitários de sistema.
                     error: (...params) => { logsCapturados.push(`<span class="error">${params.join(' ')}</span>`); }
                 };
 
-                // Sistema Dinâmico Pro de Resolução de Módulos (CJS Avançado)
-                function escopoRequire(nomeModulo) {
-                    if (nomeModulo === 'fs') {
-                        return {
-                            readFileSync: (arq) => dir[arq] ? dir[arq].content : (() => { throw new Error("ENOENT") })()
-                        };
-                    }
-
-                    let globalNodeModules = getDiretorioAtual()["node_modules"]?.content;
-                    if (!globalNodeModules || !globalNodeModules[nomeModulo]) {
-                        throw new Error(`Cannot find module '${nomeModulo}'`);
-                    }
-
-                    let moduloContent = globalNodeModules[nomeModulo].content;
-                    let rotasPossiveis = [];
-
-                    // 1. Verifica se o package.json indica onde está o arquivo principal
-                    if (moduloContent["package.json"]) {
-                        try {
-                            let pkgJson = JSON.parse(moduloContent["package.json"].content);
-                            if (pkgJson.main) {
-                                // Limpa caminhos como "./src/index.js" para "src/index.js"
-                                let rotaMain = pkgJson.main.replace(/^(\.\/|\/)/, "");
-                                rotasPossiveis.push(rotaMain);
-                            }
-                        } catch (e) {}
-                    }
-
-                    // 2. Fallbacks de segurança (Pontos de entrada padrões do ecossistema NPM)
-                    rotasPossiveis.push("index.js", "src/index.js", "dist/index.js", "lib/index.js");
-
-                    let arquivoEncontrado = null;
-
-                    // Percorre as rotas até achar um arquivo válido no VFS modular
-                    for (let rota of rotasPossiveis) {
-                        let partesCaminho = rota.split('/').filter(p => p !== '');
-                        let ponteiro = moduloContent;
-                        let valido = true;
-
-                        for (let i = 0; i < partesCaminho.length; i++) {
-                            let parte = partesCaminho[i];
-                            if (ponteiro && ponteiro[parte]) {
-                                if (i === partesCaminho.length - 1 && ponteiro[parte].type === 'file') {
-                                    arquivoEncontrado = ponteiro[parte].content;
-                                } else if (ponteiro[parte].type === 'dir') {
-                                    ponteiro = ponteiro[parte].content;
-                                } else {
-                                    valido = false;
-                                }
-                            } else {
-                                valido = false;
-                            }
+                // Sistema Suprema de Resolução de Módulos (Suporta Require Relativo ./ e ../)
+                function criarEscopoRequire(pastaMóduloRaiz, diretorioAtualContexto = "") {
+                    return function requirePro(nomeModulo) {
+                        // Caso básico: Módulos nativos simulados
+                        if (nomeModulo === 'fs') {
+                            return {
+                                readFileSync: (arq) => dir[arq] ? dir[arq].content : (() => { throw new Error("ENOENT") })()
+                            };
                         }
-                        if (arquivoEncontrado) break;
-                    }
 
-                    if (!arquivoEncontrado) {
-                        throw new Error(`Cannot find entry point for module '${nomeModulo}'. Tentou rotas: ${rotasPossiveis.join(', ')}`);
-                    }
+                        let ponteiroMódulo = pastaMóduloRaiz;
+                        let rotaFinalMódulo = "";
 
-                    try {
-                        let moduleExports = {};
-                        let runtimeModulo = { exports: moduleExports };
-                        let executorModulo = new Function('require', 'console', 'module', 'exports', arquivoEncontrado);
-                        
-                        // Permite recursividade (módulos chamando outros submódulos com a mesma engine)
-                        executorModulo(escopoRequire, simularConsole, runtimeModulo, runtimeModulo.exports);
-                        return runtimeModulo.exports;
-                    } catch (err) {
-                        throw new Error(`[Erro no Módulo ${nomeModulo}]: ${err.message}`);
-                    }
+                        // SE FOR UM REQUIRE RELATIVO (Ex: ./colors ou ../utils)
+                        if (nomeModulo.startsWith('.') || nomeModulo.startsWith('/')) {
+                            // Junta o contexto atual com o caminho solicitado
+                            let caminhoNormalizado = (diretorioAtualContexto + "/" + nomeModulo)
+                                .split('/')
+                                .filter(p => p !== '' && p !== '.');
+                            
+                            // Resolve os "..", removendo a pasta anterior da pilha
+                            let pilhaCaminho = [];
+                            for (let parte of caminhoNormalizado) {
+                                if (parte === '..') {
+                                    pilhaCaminho.pop();
+                                } else {
+                                    pilhaCaminho.push(parte);
+                                }
+                            }
+                            
+                            rotaFinalMódulo = pilhaCaminho.join('/');
+                        } else {
+                            // SE FOR UM REQUIRE GLOBAL (Ex: require('colors') de fora ou sub-dependência)
+                            let globalNodeModules = getDiretorioAtual()["node_modules"]?.content;
+                            if (!globalNodeModules || !globalNodeModules[nomeModulo]) {
+                                throw new Error(`Cannot find module '${nomeModulo}'`);
+                            }
+                            pastaMóduloRaiz = globalNodeModules[nomeModulo].content;
+                            ponteiroMódulo = pastaMóduloRaiz;
+
+                            // Descobre o ponto de entrada do novo módulo
+                            let arquivoAlvo = "index.js";
+                            if (pastaMóduloRaiz["package.json"]) {
+                                try {
+                                    let pkgJson = JSON.parse(pastaMóduloRaiz["package.json"].content);
+                                    if (pkgJson.main) arquivoAlvo = pkgJson.main.replace(/^(\.\/|\/)/, "");
+                                } catch (e) {}
+                            }
+                            rotaFinalMódulo = arquivoAlvo;
+                        }
+
+                        // Varre as rotas tentando achar o arquivo puramente ou com a extensão .js
+                        let rotasParaTestar = [rotaFinalMódulo, rotaFinalMódulo + ".js", rotaFinalMódulo + "/index.js"];
+                        let arquivoEncontrado = null;
+                        let caminhoDoArquivoSucesso = "";
+
+                        for (let rota of rotasParaTestar) {
+                            let partes = rota.split('/').filter(p => p !== '');
+                            let ponteiroBusca = pastaMóduloRaiz;
+                            let sucesso = true;
+
+                            for (let i = 0; i < partes.length; i++) {
+                                let p = partes[i];
+                                if (ponteiroBusca && ponteiroBusca[p]) {
+                                    if (i === partes.length - 1 && ponteiroBusca[p].type === 'file') {
+                                        arquivoEncontrado = ponteiroBusca[p].content;
+                                        caminhoDoArquivoSucesso = partes.slice(0, -1).join('/');
+                                    } else if (ponteiroBusca[p].type === 'dir') {
+                                        ponteiroBusca = ponteiroBusca[p].content;
+                                    }
+                                } else {
+                                    sucesso = false;
+                                }
+                            }
+                            if (arquivoEncontrado) break;
+                        }
+
+                        if (!arquivoEncontrado) {
+                            throw new Error(`Cannot find file/module '${nomeModulo}' no escopo do pacote.`);
+                        }
+
+                        // Executa o sub-arquivo injetando o require com o contexto atualizado de onde ele está rodando
+                        try {
+                            let moduleExports = {};
+                            let runtimeModulo = { exports: moduleExports };
+                            let executorModulo = new Function('require', 'console', 'module', 'exports', arquivoEncontrado);
+                            
+                            // O novo require passará a pasta onde esse sub-arquivo mora
+                            let novoRequire = criarEscopoRequire(pastaMóduloRaiz, caminhoDoArquivoSucesso);
+                            
+                            executorModulo(novoRequire, simularConsole, runtimeModulo, runtimeModulo.exports);
+                            return runtimeModulo.exports;
+                        } catch (err) {
+                            throw new Error(`[Erro no Módulo ${nomeModulo}]: ${err.message}`);
+                        }
+                    };
                 }
 
                 try {
                     let executorPrincipal = new Function('require', 'console', 'module', 'exports', codigoJS);
                     let principalModule = { exports: {} };
+                    let requireInicial = criarEscopoRequire(getDiretorioAtual(), "");
 
-                    executorPrincipal(escopoRequire, simularConsole, principalModule, principalModule.exports);
+                    executorPrincipal(requireInicial, simularConsole, principalModule, principalModule.exports);
 
-                    return logsCapturados.length > 0 ? logsCapturados.join('\n') : 'Process finished with exit code 0';
+                    return logsCaptured.length > 0 ? logsCapturados.join('\n') : 'Process finished with exit code 0';
                 } catch (err) {
-                    return `<span class="error">RuntimeError: ${err.message}</span>`;
+                    // Pequeno ajuste para garantir o mapeamento da array de logs global do interpretador
+                    return logsCapturados.length > 0 ? logsCapturados.join('\n') + `\n<span class="error">RuntimeError: ${err.message}</span>` : `<span class="error">RuntimeError: ${err.message}</span>`;
                 }
             },
+
 
 
                         'npm': async (args) => {
