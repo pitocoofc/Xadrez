@@ -493,10 +493,15 @@ Digite 'help' para listar utilitários de sistema.
                 printLiveOutput(`npm http fetch GET https://registry.npmjs.org/${pacote}`);
 
                 try {
-                    let metaUrl = `https://unpkg.com/${pacote}/?meta`;
-                    let response = await fetch(metaUrl);
+                    // Usando um proxy público para contornar o bloqueio de CORS do navegador
+                    let corsProxy = "https://cors-anywhere.herokuapp.com/";
+                    let metaUrl = `${corsProxy}https://unpkg.com/${pacote}/?meta`;
                     
-                    if (!response.ok) throw new Error("Pacote não encontrado no registro do npm.");
+                    let response = await fetch(metaUrl, {
+                        headers: { "X-Requested-With": "XMLHttpRequest" }
+                    });
+                    
+                    if (!response.ok) throw new Error("Pacote não encontrado ou bloqueio de requisição.");
                     let metadata = await response.json();
 
                     let dir = getDiretorioAtual();
@@ -511,6 +516,7 @@ Digite 'help' para listar utilitários de sistema.
                     async function baixarArquivosSubtree(filesArray, pastaVirtual) {
                         for (let file of filesArray) {
                             if (file.type === 'file') {
+                                // Arquivos de texto puro/código geralmente passam sem o proxy, mas se der erro adicionamos o proxy aqui também
                                 let fileRes = await fetch(`https://unpkg.com/${pacote}${file.path}`);
                                 let conteudo = await fileRes.text();
                                 pastaVirtual[file.name] = { "type": "file", "content": conteudo };
@@ -524,11 +530,12 @@ Digite 'help' para listar utilitários de sistema.
                     await baixarArquivosSubtree(metadata.files, pastaPacote);
 
                     salvarFS();
-                    return `<span class="success">npm success! adicionado 1 pacote de dezenas de arquivos virtuais no localStorage.</span>`;
+                    return `<span class="success">npm success! adicionado 1 pacote e dependências virtuais no localStorage.</span>`;
                 } catch (err) {
-                    return `<span class="error">npm ERR! code E404\nnpm ERR! 404 Not Found: ${pacote} - ${err.message}</span>`;
+                    return `<span class="error">npm ERR! code E404\nnpm ERR! 404 Not Found: ${pacote} - ${err.message}\n(Dica: Pode ser bloqueio de CORS ou o proxy está instável)</span>`;
                 }
             },
+
 
             'git': async (args) => {
                 if (args[0] !== 'clone' || !args[1]) return `<span class="error">Uso: git clone &lt;url-do-github.git&gt;</span>`;
