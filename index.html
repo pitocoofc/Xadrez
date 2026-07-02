@@ -417,6 +417,8 @@ Digite 'help' para listar utilitários de sistema.
                 setTimeout(() => { nanoEditor.focus(); }, 50);
                 return "OPEN_NANO_SIGNAL";
             },          
+
+
                         'node': (args) => {
                 if (!args[0]) return `<span class="error">Uso: node &lt;arquivo.js&gt;</span>`;
                 let dir = getDiretorioAtual();
@@ -431,11 +433,11 @@ Digite 'help' para listar utilitários de sistema.
                     error: (...params) => { logsCapturados.push(`<span class="error">${params.join(' ')}</span>`); }
                 };
 
-                // Engine de Resolução Suprema com Módulos Nativos Embutidos
+                // Engine Suprema Corrigida (Raiz Estática para node_modules globais)
                 function criarEscopoRequire(pastaMóduloRaiz, diretorioAtualContexto = "") {
                     return function requirePro(nomeModulo) {
                         
-                        // --- INTERCEPTOR DE MÓDULOS NATIVOS CORE ---
+                        // 1. PRIORIDADE MÁXIMA: INTERCEPTOR DE MÓDULOS NATIVOS CORE
                         if (nomeModulo === 'fs') {
                             return {
                                 readFileSync: (arq) => dir[arq] ? dir[arq].content : (() => { throw new Error("ENOENT") })(),
@@ -455,7 +457,6 @@ Digite 'help' para listar utilitários de sistema.
                                 inherits: (ctor, superCtor) => { if (superCtor) ctor.prototype = Object.create(superCtor.prototype, { constructor: { value: ctor, enumerable: false, writable: true, configurable: true } }); }
                             };
                         }
-                        // ESSE BLOCO AQUI EMBAIXO MATA O ERRO DO 'os'
                         if (nomeModulo === 'os') {
                             return {
                                 platform: () => window.process.platform,
@@ -469,7 +470,7 @@ Digite 'help' para listar utilitários de sistema.
 
                         let rotaFinalMódulo = "";
 
-                        // Se for require relativo (./ ou ../)
+                        // 2. SE FOR REQUIRE RELATIVO (./ ou ../)
                         if (nomeModulo.startsWith('.') || nomeModulo.startsWith('/')) {
                             let caminhoNormalizado = (diretorioAtualContexto + "/" + nomeModulo)
                                 .split('/')
@@ -485,11 +486,14 @@ Digite 'help' para listar utilitários de sistema.
                             }
                             rotaFinalMódulo = pilhaCaminho.join('/');
                         } else {
-                            // Se for do node_modules
-                            let globalNodeModules = getDiretorioAtual()["node_modules"]?.content;
+                            // 3. SE FOR REQUIRE GLOBAL (Sempre busca na raiz /home/ghost/node_modules)
+                            let raizHomeGhost = FS["root"].content["home"].content["ghost"].content;
+                            let globalNodeModules = raizHomeGhost["node_modules"]?.content;
+                            
                             if (!globalNodeModules || !globalNodeModules[nomeModulo]) {
                                 throw new Error(`Cannot find module '${nomeModulo}'`);
                             }
+                            
                             pastaMóduloRaiz = globalNodeModules[nomeModulo].content;
 
                             let arquivoAlvo = "index.js";
