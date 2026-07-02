@@ -493,48 +493,44 @@ Digite 'help' para listar utilitários de sistema.
                 printLiveOutput(`npm http fetch GET https://registry.npmjs.org/${pacote}`);
 
                 try {
-                    // Usando um proxy público para contornar o bloqueio de CORS do navegador
-                    let corsProxy = "https://cors-anywhere.herokuapp.com/";
-                    let metaUrl = `${corsProxy}https://unpkg.com/${pacote}/?meta`;
+                    // 1. Puxa os metadados direto do registro oficial do NPM (CORS Aberto!)
+                    let npmRes = await fetch(`https://registry.npmjs.org/${pacote}/latest`);
+                    if (!npmRes.ok) throw new Error("Pacote não encontrado no registro do NPM.");
                     
-                    let response = await fetch(metaUrl, {
-                        headers: { "X-Requested-With": "XMLHttpRequest" }
-                    });
-                    
-                    if (!response.ok) throw new Error("Pacote não encontrado ou bloqueio de requisição.");
-                    let metadata = await response.json();
+                    let pkgData = await npmRes.json();
+                    let versao = pkgData.version;
+                    let arquivoMain = pkgData.main || "index.js";
+                    arquivoMain = arquivoMain.replace(/^\.\//, ""); // Limpa o './' se houver
 
                     let dir = getDiretorioAtual();
                     if (!dir["node_modules"]) dir["node_modules"] = { "type": "dir", "content": {} };
                     let nodeModules = dir["node_modules"].content;
 
+                    // Cria a estrutura do pacote no seu VFS
                     nodeModules[pacote] = { "type": "dir", "content": {} };
                     let pastaPacote = nodeModules[pacote].content;
 
-                    printLiveOutput(`Instalando arquivos de '${pacote}' no VFS...`);
+                    printLiveOutput(`npm http fetch GET https://cdn.jsdelivr.net/npm/${pacote}@${versao}/${arquivoMain}`);
 
-                    async function baixarArquivosSubtree(filesArray, pastaVirtual) {
-                        for (let file of filesArray) {
-                            if (file.type === 'file') {
-                                // Arquivos de texto puro/código geralmente passam sem o proxy, mas se der erro adicionamos o proxy aqui também
-                                let fileRes = await fetch(`https://unpkg.com/${pacote}${file.path}`);
-                                let conteudo = await fileRes.text();
-                                pastaVirtual[file.name] = { "type": "file", "content": conteudo };
-                            } else if (file.type === 'directory' && file.files) {
-                                pastaVirtual[file.name] = { "type": "dir", "content": {} };
-                                await baixarArquivosSubtree(file.files, pastaVirtual[file.name].content);
-                            }
-                        }
-                    }
+                    // 2. Puxa o arquivo principal e o package.json usando a CDN oficial do jsDelivr (CORS Aberto!)
+                    let mainRes = await fetch(`https://cdn.jsdelivr.net/npm/${pacote}@${versao}/${arquivoMain}`);
+                    if (!mainRes.ok) throw new Error(`Não foi possível obter o arquivo de entrada (${arquivoMain}).`);
+                    let codigoMain = await mainRes.text();
 
-                    await baixarArquivosSubtree(metadata.files, pastaPacote);
+                    // Salva os arquivos essenciais para o seu comando 'node' conseguir rodar o require
+                    pastaPacote[arquivoMain] = { "type": "file", "content": codigoMain };
+                    pastaPacote["package.json"] = { 
+                        "type": "file", 
+                        "content": JSON.stringify({ name: pacote, version: versao, main: arquivoMain }) 
+                    };
 
                     salvarFS();
-                    return `<span class="success">npm success! adicionado 1 pacote e dependências virtuais no localStorage.</span>`;
+                    return `<span class="success">+ ${pacote}@${versao}\nadded 1 package in GhostOS VFS successfully.</span>`;
                 } catch (err) {
-                    return `<span class="error">npm ERR! code E404\nnpm ERR! 404 Not Found: ${pacote} - ${err.message}\n(Dica: Pode ser bloqueio de CORS ou o proxy está instável)</span>`;
+                    return `<span class="error">npm ERR! code E404\nnpm ERR! 404 Not Found: ${pacote} - ${err.message}</span>`;
                 }
             },
+
 
 
             'git': async (args) => {
