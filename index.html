@@ -403,7 +403,7 @@ Digite 'help' para listar utilitários de sistema.
                 return "OPEN_NANO_SIGNAL";
             },
 
-                        'node': (args) => {
+                                    'node': (args) => {
                 if (!args[0]) return `<span class="error">Uso: node &lt;arquivo.js&gt;</span>`;
                 let dir = getDiretorioAtual();
                 if (!dir[args[0]]) return `<span class="error">node: internal/modules/cjs/loader: Cannot find module './${args[0]}'</span>`;
@@ -417,27 +417,48 @@ Digite 'help' para listar utilitários de sistema.
                     error: (...params) => { logsCapturados.push(`<span class="error">${params.join(' ')}</span>`); }
                 };
 
-                // Sistema Suprema de Resolução de Módulos (Suporta Require Relativo ./ e ../)
+                // SIMULAÇÃO DE VARIÁVEIS GLOBAIS DO NODE.JS
+                const simularProcess = {
+                    env: { NODE_ENV: 'development' },
+                    argv: ['node', args[0]],
+                    version: 'v18.16.0',
+                    platform: 'linux',
+                    browser: true
+                };
+
+                // ENGINE DE RESOLUÇÃO DE MÓDULOS
                 function criarEscopoRequire(pastaMóduloRaiz, diretorioAtualContexto = "") {
                     return function requirePro(nomeModulo) {
-                        // Caso básico: Módulos nativos simulados
+                        
+                        // --- INTERCEPTOR DE MÓDULOS NATIVOS DO NODE.JS ---
                         if (nomeModulo === 'fs') {
                             return {
-                                readFileSync: (arq) => dir[arq] ? dir[arq].content : (() => { throw new Error("ENOENT") })()
+                                readFileSync: (arq) => dir[arq] ? dir[arq].content : (() => { throw new Error("ENOENT") })(),
+                                existsSync: (arq) => !!dir[arq]
+                            };
+                        }
+                        if (nomeModulo === 'path') {
+                            return {
+                                join: (...p) => p.join('/').replace(/\/+/g, '/'),
+                                resolve: (...p) => p.join('/')
+                            };
+                        }
+                        if (nomeModulo === 'util') {
+                            return {
+                                inspect: (obj) => JSON.stringify(obj, null, 2),
+                                inherits: (ctor, superCtor) => { if (superCtor) ctor.prototype = Object.create(superCtor.prototype, { constructor: { value: ctor, enumerable: false, writable: true, configurable: true } }); }
                             };
                         }
 
                         let ponteiroMódulo = pastaMóduloRaiz;
                         let rotaFinalMódulo = "";
 
-                        // SE FOR UM REQUIRE RELATIVO (Ex: ./colors ou ../utils)
+                        // SE FOR REQUIRE RELATIVO
                         if (nomeModulo.startsWith('.') || nomeModulo.startsWith('/')) {
-                            // Junta o contexto atual com o caminho solicitado
                             let caminhoNormalizado = (diretorioAtualContexto + "/" + nomeModulo)
                                 .split('/')
                                 .filter(p => p !== '' && p !== '.');
                             
-                            // Resolve os "..", removendo a pasta anterior da pilha
                             let pilhaCaminho = [];
                             for (let parte of caminhoNormalizado) {
                                 if (parte === '..') {
@@ -446,10 +467,9 @@ Digite 'help' para listar utilitários de sistema.
                                     pilhaCaminho.push(parte);
                                 }
                             }
-                            
                             rotaFinalMódulo = pilhaCaminho.join('/');
                         } else {
-                            // SE FOR UM REQUIRE GLOBAL (Ex: require('colors') de fora ou sub-dependência)
+                            // SE FOR REQUIRE GLOBAL (node_modules)
                             let globalNodeModules = getDiretorioAtual()["node_modules"]?.content;
                             if (!globalNodeModules || !globalNodeModules[nomeModulo]) {
                                 throw new Error(`Cannot find module '${nomeModulo}'`);
@@ -457,7 +477,6 @@ Digite 'help' para listar utilitários de sistema.
                             pastaMóduloRaiz = globalNodeModules[nomeModulo].content;
                             ponteiroMódulo = pastaMóduloRaiz;
 
-                            // Descobre o ponto de entrada do novo módulo
                             let arquivoAlvo = "index.js";
                             if (pastaMóduloRaiz["package.json"]) {
                                 try {
@@ -468,7 +487,6 @@ Digite 'help' para listar utilitários de sistema.
                             rotaFinalMódulo = arquivoAlvo;
                         }
 
-                        // Varre as rotas tentando achar o arquivo puramente ou com a extensão .js
                         let rotasParaTestar = [rotaFinalMódulo, rotaFinalMódulo + ".js", rotaFinalMódulo + "/index.js"];
                         let arquivoEncontrado = null;
                         let caminhoDoArquivoSucesso = "";
@@ -498,16 +516,15 @@ Digite 'help' para listar utilitários de sistema.
                             throw new Error(`Cannot find file/module '${nomeModulo}' no escopo do pacote.`);
                         }
 
-                        // Executa o sub-arquivo injetando o require com o contexto atualizado de onde ele está rodando
                         try {
                             let moduleExports = {};
                             let runtimeModulo = { exports: moduleExports };
-                            let executorModulo = new Function('require', 'console', 'module', 'exports', arquivoEncontrado);
                             
-                            // O novo require passará a pasta onde esse sub-arquivo mora
+                            // Adicionamos 'process' na assinatura da Function para injetá-lo globalmente no escopo do módulo
+                            let executorModulo = new Function('require', 'console', 'module', 'exports', 'process', arquivoEncontrado);
                             let novoRequire = criarEscopoRequire(pastaMóduloRaiz, caminhoDoArquivoSucesso);
                             
-                            executorModulo(novoRequire, simularConsole, runtimeModulo, runtimeModulo.exports);
+                            executorModulo(novoRequire, simularConsole, runtimeModulo, runtimeModulo.exports, simularProcess);
                             return runtimeModulo.exports;
                         } catch (err) {
                             throw new Error(`[Erro no Módulo ${nomeModulo}]: ${err.message}`);
@@ -516,18 +533,20 @@ Digite 'help' para listar utilitários de sistema.
                 }
 
                 try {
-                    let executorPrincipal = new Function('require', 'console', 'module', 'exports', codigoJS);
+                    // Adicionamos 'process' também no script principal que o usuário executa
+                    let executorPrincipal = new Function('require', 'console', 'module', 'exports', 'process', codigoJS);
                     let principalModule = { exports: {} };
                     let requireInicial = criarEscopoRequire(getDiretorioAtual(), "");
 
-                    executorPrincipal(requireInicial, simularConsole, principalModule, principalModule.exports);
+                    executorPrincipal(requireInicial, simularConsole, principalModule, principalModule.exports, simularProcess);
 
-                    return logsCaptured.length > 0 ? logsCapturados.join('\n') : 'Process finished with exit code 0';
+                    // Pequena correção: Garante que lê a variável logsCapturados que foi definida acima
+                    return logsCapturados.length > 0 ? logsCapturados.join('\n') : 'Process finished with exit code 0';
                 } catch (err) {
-                    // Pequeno ajuste para garantir o mapeamento da array de logs global do interpretador
                     return logsCapturados.length > 0 ? logsCapturados.join('\n') + `\n<span class="error">RuntimeError: ${err.message}</span>` : `<span class="error">RuntimeError: ${err.message}</span>`;
                 }
             },
+
 
 
 
